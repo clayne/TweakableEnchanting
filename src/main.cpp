@@ -45,11 +45,54 @@ extern "C" DLLEXPORT bool SKSEAPI SKSEPlugin_Query(const SKSE::QueryInterface* a
 	return true;
 }
 
+float change_max_power(float power, void* functor)
+{
+	auto menu = (RE::CraftingSubMenus::EnchantConstructMenu*)((char*)functor - 0x1A8);
+	if (auto _soulgem = menu->selected.soulGem.get(); _soulgem && _soulgem->data && _soulgem->data->object) {
+		if (auto soulgem = _soulgem->data->object->As<RE::TESSoulGem>()) {
+			// 0..5
+			auto soul = static_cast<uint32_t>(soulgem->GetContainedSoul());
+
+			return power * 0.2f * soul;
+		}
+	}
+
+	return power;
+}
+
+// change ench power (=> max mag) depending on soulgem
+void Hook()
+{
+	// SkyrimSE.exe+868AEF
+	uintptr_t ret_addr = REL::ID(50366).address() + 0xef;
+
+	struct Code : Xbyak::CodeGenerator
+	{
+		Code(uintptr_t ret_addr, uintptr_t func)
+		{
+			// [rsp+68h+power] = power
+			// rdi = CreateEffectFunctor
+			// ans in xmm2
+
+			movss(xmm0, ptr[rsp + 0x68 + 0x8]);
+			mov(rdx, rdi);
+
+			mov(rax, func);
+			call(rax);
+			movss(xmm2, xmm0);
+			
+			mov(rax, ret_addr);
+			jmp(rax);
+		}
+	} xbyakCode{ ret_addr, uintptr_t(change_max_power) };
+	add_trampoline<6, 50366, 0xe9>(&xbyakCode);  // SkyrimSE.exe+868AE9
+}
+
 static void SKSEMessageHandler(SKSE::MessagingInterface::Message* message)
 {
 	switch (message->type) {
 	case SKSE::MessagingInterface::kDataLoaded:
-		//
+		Hook();
 
 		break;
 	}
